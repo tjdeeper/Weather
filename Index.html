@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Динамическая Погода Pro</title>
+    <!-- Tailwind CSS v4 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- FontAwesome для иконок -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* CSS Анимации эффектов */
+        @keyframes snowfall {
+            0% { transform: translateY(-10vh) translateX(0); opacity: 1; }
+            100% { transform: translateY(100vh) translateX(50px); opacity: 0.3; }
+        }
+        @keyframes rainfall {
+            0% { transform: translateY(-10vh); opacity: 0.6; }
+            100% { transform: translateY(100vh); opacity: 0.1; }
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        @keyframes lightning {
+            0%, 95%, 98%, 100% { opacity: 0; }
+            96%, 99% { opacity: 0.2; }
+        }
+        .snowflake {
+            position: absolute; width: 6px; height: 6px; background: white; border-radius: 50%;
+            animation: snowfall linear infinite; pointer-events: none;
+        }
+        .raindrop {
+            position: absolute; width: 1px; height: 25px; background: linear-gradient(transparent, #a5f3fc);
+            animation: rainfall linear infinite; pointer-events: none;
+        }
+        .lightning-flash {
+            position: absolute; inset: 0; background: white; opacity: 0;
+            animation: lightning 6s ease-in-out infinite; pointer-events: none; z-index: 1;
+        }
+        .animate-float { animation: float 4s ease-in-out infinite; }
+        .weather-card { backdrop-filter: blur(16px); background: rgba(255, 255, 255, 0.12); }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start p-4 md:p-8 transition-all duration-1000 font-sans text-white bg-gradient-to-br from-slate-800 to-slate-900 overflow-x-hidden relative">
+
+    <!-- Контейнер для динамических осадков и вспышек -->
+    <div id="effects-container" class="absolute inset-0 pointer-events-none z-0"></div>
+
+    <div class="w-full max-w-4xl z-10 flex flex-col gap-6">
+        
+        <!-- Верхняя панель: Переключатель источников и статус -->
+        <div class="flex flex-col sm:flex-row justify-between items-center gap-4 weather-card p-4 rounded-2xl border border-white/10 shadow-lg">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-database text-sky-400 text-xl"></i>
+                <span class="text-sm font-semibold opacity-80">Источник данных:</span>
+                <div class="inline-flex rounded-xl bg-black/20 p-1 border border-white/5">
+                    <button id="src-weatherapi" onclick="switchSource('weatherapi')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow">
+                        WeatherAPI
+                    </button>
+                    <button id="src-openmeteo" onclick="switchSource('openmeteo')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white">
+                        Open-Meteo
+                    </button>
+                </div>
+            </div>
+            <div class="text-xs opacity-60 flex items-center gap-1.5" id="status-text">
+                <i class="fa-solid fa-circle-notch animate-spin"></i> Ожидание запуска...
+            </div>
+        </div>
+
+        <!-- ГЛАВНЫЙ ВИДЖЕТ ТЕКУЩЕЙ ПОГОДЫ -->
+        <div id="weather-app" class="weather-card rounded-3xl p-6 md:p-8 shadow-2xl border border-white/20 hidden transition-all duration-500">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                
+                <!-- Основное состояние -->
+                <div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h1 id="city-name" class="text-3xl font-extrabold tracking-tight drop-shadow-sm">---</h1>
+                            <p id="current-date" class="text-sm opacity-80 mt-1">---</p>
+                        </div>
+                        <span id="weather-status-badge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-white/20">
+                            ---
+                        </span>
+                    </div>
+
+                    <div class="flex items-center gap-6 my-6">
+                        <div id="weather-icon-container" class="text-7xl md:text-8xl animate-float filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.25)]">
+                            <i class="fa-solid fa-cloud-sun"></i>
+                        </div>
+                        <div>
+                            <div class="text-6xl md:text-7xl font-black tracking-tighter relative inline-block">
+                                <span id="temp-display">--</span><span class="text-3xl absolute -top-1 -right-5">°</span>
+                            </div>
+                            <p id="weather-desc" class="text-lg font-medium capitalize mt-1 opacity-90">---</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Дополнительные параметры -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white/5 rounded-2xl p-3.5 flex items-center space-x-3 border border-white/5">
+                        <div class="text-xl opacity-80 w-8 text-center text-amber-300"><i class="fa-solid fa-temperature-half"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Ощущается</p>
+                            <p id="feels-like" class="text-base font-semibold">-- °C</p>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 rounded-2xl p-3.5 flex items-center space-x-3 border border-white/5">
+                        <div class="text-xl opacity-80 w-8 text-center text-blue-300"><i class="fa-solid fa-droplet"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Влажность</p>
+                            <p id="humidity" class="text-base font-semibold">-- %</p>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 rounded-2xl p-3.5 flex items-center space-x-3 border border-white/5">
+                        <div class="text-xl opacity-80 w-8 text-center text-teal-300"><i class="fa-solid fa-wind"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Ветер</p>
+                            <p id="wind-speed" class="text-base font-semibold">-- м/с</p>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 rounded-2xl p-3.5 flex items-center space-x-3 border border-white/5">
+                        <div class="text-xl opacity-80 w-8 text-center text-rose-300"><i class="fa-solid fa-gauge-high"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Давление</p>
+                            <p id="pressure" class="text-base font-semibold">-- мм</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ПРОГНОЗ НА 10 ДНЕЙ -->
+        <div id="forecast-container" class="weather-card rounded-3xl p-6 border border-white/10 hidden">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-calendar-days text-sky-400"></i> Прогноз погоды
+            </h2>
+            
+            <!-- Горизонтальная лента дней -->
+            <div id="forecast-days" class="flex gap-3 overflow-x-auto pb-3 snap-x scrollbar-thin scrollbar-thumb-white/20">
+                <!-- Карточки дней генерируются динамически -->
+            </div>
+
+            <!-- Детальный блок выбранного дня -->
+            <div id="detail-box" class="mt-6 bg-black/20 border border-white/5 rounded-2xl p-5 hidden transition-all duration-300">
+                <h3 id="detail-date" class="text-base font-bold text-sky-300 mb-3 uppercase tracking-wider">---</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div class="bg-white/5 p-3 rounded-xl">
+                        <span class="block text-xs opacity-50">Макс. температура</span>
+                        <span id="detail-max-temp" class="text-lg font-bold text-amber-400">--°C</span>
+                    </div>
+                    <div class="bg-white/5 p-3 rounded-xl">
+                        <span class="block text-xs opacity-50">Мин. температура</span>
+                        <span id="detail-min-temp" class="text-lg font-bold text-blue-400">--°C</span>
+                    </div>
+                    <div class="bg-white/5 p-3 rounded-xl">
+                        <span class="block text-xs opacity-50">Вероятность осадков</span>
+                        <span id="detail-rain-chance" class="text-lg font-bold text-cyan-400">--%</span>
+                    </div>
+                    <div class="bg-white/5 p-3 rounded-xl">
+                        <span class="block text-xs opacity-50">УФ-индекс</span>
+                        <span id="detail-uv" class="text-lg font-bold text-orange-400">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Стартовый экран -->
+        <div id="welcome-card" class="weather-card rounded-3xl p-8 text-center border border-white/20 shadow-2xl">
+            <div class="text-6xl mb-4 text-sky-400"><i class="fa-solid fa-location-dot animate-bounce"></i></div>
+            <h2 class="text-2xl font-bold mb-2">Смарт Погода Мульти-Источник</h2>
+            <p class="text-sm opacity-80 mb-6">Приложение использует вашу геолокацию для точного сопоставления метеоданных из выбранных систем.</p>
+            <button onclick="initWeather()" class="w-full sm:w-auto bg-white text-slate-950 font-extrabold py-3.5 px-8 rounded-2xl transition hover:scale-[1.02] active:scale-[0.98] shadow-xl cursor-pointer">
+                Определить город и запустить
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // Конфигурация ключей
+        const WEATHERAPI_KEY = "3eee539d70ae4d4183a162401262705";
+        let currentSource = 'weatherapi'; // 'weatherapi' или 'openmeteo'
+        let currentCoords = null;
+        let globalForecastData = []; // Для хранения распарсенного прогноза
+
+        // Темы оформления под типы условий
+        const weatherThemes = {
+            Clear: { bg: "from-amber-400 via-orange-500 to-sky-600", icon: '<i class="fa-solid fa-sun text-amber-200"></i>', badge: "bg-amber-500/30 text-amber-100", effect: "none", name: "Ясно" },
+            Clouds: { bg: "from-sky-400 via-slate-500 to-slate-700", icon: '<i class="fa-solid fa-cloud text-slate-100"></i>', badge: "bg-slate-500/30 text-slate-100", effect: "none", name: "Облачно" },
+            Rain: { bg: "from-slate-700 via-blue-800 to-indigo-950", icon: '<i class="fa-solid fa-cloud-showers-heavy text-blue-300"></i>', badge: "bg-blue-500/30 text-blue-100", effect: "rain", name: "Дождь" },
+            Snow: { bg: "from-blue-900 via-indigo-950 to-slate-800", icon: '<i class="fa-solid fa-snowflake text-sky-200"></i>', badge: "bg-sky-500/30 text-sky-100", effect: "snow", name: "Снег" }
+        };
+
+        function switchSource(source) {
+            if (currentSource === source) return;
+            currentSource = source;
+            
+            // Визуальный переключатель табов
+            const btnApi = document.getElementById('src-weatherapi');
+            const btnMeteo = document.getElementById('src-openmeteo');
+            if (source === 'weatherapi') {
+                btnApi.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow";
+                btnMeteo.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white";
+            } else {
+                btnMeteo.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow";
+                btnApi.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white";
+            }
+
+            if (currentCoords) {
+                fetchWeatherData(currentCoords.lat, currentCoords.lon);
+            }
+        }
+
+        function initWeather() {
+            document.getElementById('welcome-card').classList.add('hidden');
+            document.getElementById('weather-app').classList.remove('hidden');
+            document.getElementById('forecast-container').classList.remove('hidden');
+            
+            setStatus("Определение местоположения...", true);
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+                        currentCoords = { lat: position.coords.latitude, lon: position.coords.longitude };
+                        fetchWeatherData(currentCoords.lat, currentCoords.lon);
+                    },
+                    error => {
+                        setStatus("Геопозиция недоступна. Попробуйте обновить права в браузере.", false);
+                    }
+                );
+            } else {
+                setStatus("Геолокация не поддерживается браузером.", false);
+            }
+        }
+
+        function setStatus(text, spin) {
+            const statusEl = document.getElementById('status-text');
+            statusEl.innerHTML = `${spin ? '<i class="fa-solid fa-circle-notch animate-spin text-sky-400"></i>' : '<i class="fa-solid fa-circle text-rose-500"></i>'} ${text}`;
+        }
+
+        async function fetchWeatherData(lat, lon) {
+            setStatus(`Запрос к ${currentSource === 'weatherapi' ? 'WeatherAPI' : 'Open-Meteo'}...`, true);
+            try {
+                if (currentSource === 'weatherapi') {
+                    await fetchFromWeatherApi(lat, lon);
+                } else {
+                    await fetchFromOpenMeteo(lat, lon);
+                }
+                setStatus("Данные обновлены", false);
+            } catch (err) {
+                console.error(err);
+                setStatus("Ошибка при получении метеоданных", false);
+            }
+        }
+
+        // РАБОТА С WEATHERAPI (Включая полноценный прогноз на 10 дней)
+        async function fetchFromWeatherApi(lat, lon) {
+            const url = `https://api.weatherapi.com/v1/forecast.json?key=${WEATHERAPI_KEY}&q=${lat},${lon}&days=10&lang=ru`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("WeatherAPI error");
+            const data = await response.json();
+
+            // Парсим текущую погоду
+            const code = data.current.condition.code;
+            let type = 'Clouds';
+            if (code === 1000) type = 'Clear';
+            else if ([1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243, 1246, 1087, 1273, 1276].includes(code)) type = 'Rain';
+            else if ([1066, 1114, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258, 1279, 1282].includes(code)) type = 'Snow';
+
+            updateCurrentUI({
+                city: data.location.name,
+                date: new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'short' }),
+                temp: Math.round(data.current.temp_c),
+                desc: data.current.condition.text,
+                feels: Math.round(data.current.feelslike_c),
+                humidity: data.current.humidity,
+                wind: (data.current.wind_kph / 3.6).toFixed(1), // перевод в м/с
+                pressure: Math.round(data.current.pressure_mb * 0.750062), // в мм рт. ст.
+                type: type
+            });
+
+            // Парсим массив дней для прогноза
+            globalForecastData = data.forecast.forecastday.map(day => {
+                const fCode = day.day.condition.code;
+                let fType = 'Clouds';
+                if (fCode === 1000) fType = 'Clear';
+                else if ([1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243, 1246].includes(fCode)) fType = 'Rain';
+                else if ([1066, 1114, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258].includes(fCode)) fType = 'Snow';
+
+                return {
+                    dateStr: new Date(day.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+                    dayName: new Date(day.date).toLocaleDateString('ru-RU', { weekday: 'short' }),
+                    maxTemp: Math.round(day.day.maxtemp_c),
+                    minTemp: Math.round(day.day.mintemp_c),
+                    rainChance: day.day.daily_chance_of_rain || day.day.daily_chance_of_snow || 0,
+                    uv: day.day.uv,
+                    desc: day.day.condition.text,
+                    type: fType
+                };
+            });
+
+            renderForecast();
+        }
+
+        // РАБОТА С OPEN-METEO (Прогноз до 10 дней без ключей)
+        async function fetchFromOpenMeteo(lat, lon) {
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,apparent_temperature,weather_code,wind_speed_10m,surface_pressure&daily=weather_code,temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max&wind_speed_unit=ms&pressure_unit=hpa&timezone=auto&forecast_days=10`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("OpenMeteo error");
+            const data = await response.json();
+
+            // Маппинг WMO кодов погоды в наши типы условий
+            function parseWmoCode(code) {
+                if (code === 0) return { type: 'Clear', desc: 'Ясно' };
+                if ([1, 2, 3, 45, 48].includes(code)) return { type: 'Clouds', desc: 'Облачно / Туман' };
+                if ([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(code)) return { type: 'Rain', desc: 'Дождь / Гроза' };
+                if ([71, 73, 75, 77, 85, 86].includes(code)) return { type: 'Snow', desc: 'Снегопад' };
+                return { type: 'Clouds', desc: 'Облачно' };
+            }
+
+            const currentInfo = parseWmoCode(data.current.weather_code);
+
+            updateCurrentUI({
+                city: "Текущая геопозиция",
+                date: new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'short' }),
+                temp: Math.round(data.current.temperature_2m),
+                desc: currentInfo.desc,
+                feels: Math.round(data.current.apparent_temperature),
+                humidity: data.current.relative_humidity_2m,
+                wind: data.current.wind_speed_10m.toFixed(1),
+                pressure: Math.round(data.current.surface_pressure * 0.750062),
+                type: currentInfo.type
+            });
+
+            // Наполнение массива прогноза
+            globalForecastData = data.daily.time.map((time, idx) => {
+                const dayInfo = parseWmoCode(data.daily.weather_code[idx]);
+                return {
+                    dateStr: new Date(time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+                    dayName: new Date(time).toLocaleDateString('ru-RU', { weekday: 'short' }),
+                    maxTemp: Math.round(data.daily.temperature_2m_max[idx]),
+                    minTemp: Math.round(data.daily.temperature_2m_min[idx]),
+                    rainChance: data.daily.precipitation_probability_max[idx] || 0,
+                    uv: data.daily.uv_index_max[idx] ? data.daily.uv_index_max[idx].toFixed(1) : 0,
+                    desc: dayInfo.desc,
+                    type: dayInfo.type
+                };
+            });
+
+            renderForecast();
+        }
+
+        // Обновление верхнего основного интерфейса
+        function updateCurrentUI(w) {
+            const theme = weatherThemes[w.type] || weatherThemes.Clouds;
+            document.body.className = `min-h-screen flex flex-col items-center justify-start p-4 md:p-8 transition-all duration-1000 font-sans text-white overflow-x-hidden relative bg-gradient-to-br ${theme.bg}`;
+            
+            document.getElementById('city-name').innerText = w.city;
+            document.getElementById('current-date').innerText = w.date;
+            document.getElementById('temp-display').innerText = w.temp;
+            document.getElementById('weather-desc').innerText = w.desc;
+            document.getElementById('feels-like').innerText = `${w.feels} °C`;
+            document.getElementById('humidity').innerText = `${w.humidity} %`;
+            document.getElementById('wind-speed').innerText = `${w.wind} м/с`;
+            document.getElementById('pressure').innerText = `${w.pressure} мм`;
+
+            const badge = document.getElementById('weather-status-badge');
+            badge.innerText = theme.name;
+            badge.className = `inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${theme.badge}`;
+            document.getElementById('weather-icon-container').innerHTML = theme.icon;
+
+            generateParticles(theme.effect);
+        }
+
+        // Отрисовка горизонтальной ленты дней
+        function renderForecast() {
+            const container = document.getElementById('forecast-days');
+            container.innerHTML = '';
+
+            globalForecastData.forEach((day, index) => {
+                const theme = weatherThemes[day.type] || weatherThemes.Clouds;
+                
+                const card = document.createElement('button');
+                card.onclick = () => showDetailDay(index);
+                card.className = "flex-shrink-0 w-24 bg-white/5 hover:bg-white/15 border border-white/5 hover:border-white/20 p-3 rounded-2xl flex flex-col items-center gap-2 transition active:scale-95 cursor-pointer snap-center";
+                
+                card.innerHTML = `
+                    <span class="text-xs opacity-60 uppercase font-semibold">${day.dayName}</span>
+                    <span class="text-xs font-bold">${day.dateStr}</span>
+                    <div class="text-2xl my-1 filter drop-shadow-sm">${theme.icon}</div>
+                    <div class="text-xs font-black">
+                        <span class="text-amber-300">${day.maxTemp}°</span> 
+                        <span class="opacity-40 text-blue-200">${day.minTemp}°</span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+
+            // Автоматически раскрываем детальный вид для самого первого (текущего) дня
+            showDetailDay(0);
+        }
+
+        // Показ детальных метеоданных при клике на день из ленты
+        function showDetailDay(idx) {
+            const d = globalForecastData[idx];
+            if (!d) return;
+
+            const box = document.getElementById('detail-box');
+            box.classList.remove('hidden');
+
+            document.getElementById('detail-date').innerText = `${d.dayName}, ${d.dateStr} — ${d.desc}`;
+            document.getElementById('detail-max-temp').innerText = `${d.maxTemp} °C`;
+            document.getElementById('detail-min-temp').innerText = `${d.minTemp} °C`;
+            document.getElementById('detail-rain-chance').innerText = `${d.rainChance} %`;
+            document.getElementById('detail-uv').innerText = d.uv;
+        }
+
+        // Система процедурных частиц осадков
+        function generateParticles(effectType) {
+            const container = document.getElementById('effects-container');
+            container.innerHTML = '';
+            if (effectType === 'none') return;
+
+            if (effectType === 'rain') {
+                const flash = document.createElement('div');
+                flash.className = 'lightning-flash';
+                container.appendChild(flash);
+            }
+
+            const particleCount = effectType === 'rain' ? 65 : 35;
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = effectType === 'rain' ? 'raindrop' : 'snowflake';
+                particle.style.left = `${Math.random() * 100}%`;
+                particle.style.top = `${Math.random() * -15}%`;
+                particle.style.animationDuration = effectType === 'rain' ? `${0.4 + Math.random() * 0.4}s` : `${2.5 + Math.random() * 3.5}s`;
+                particle.style.animationDelay = `${Math.random() * 2}s`;
+                
+                if (effectType === 'snow') {
+                    const size = 3 + Math.random() * 4;
+                    particle.style.width = `${size}px`;
+                    particle.style.height = `${size}px`;
+                }
+                container.appendChild(particle);
+            }
+        }
+    </script>
+</body>
+</html>
