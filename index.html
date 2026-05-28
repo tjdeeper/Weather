@@ -370,7 +370,7 @@
 
         // Запрос через Open-Meteo (10 дней)
         async function fetchOpenMeteoData(lat, lon) {
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&wind_speed_unit=ms&timezone=auto&forecast_days=10`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code,relative_humidity_2m,wind_speed_10m,pressure_msl&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&wind_speed_unit=ms&timezone=auto&forecast_days=10`;
             const response = await fetch(url);
             if (!response.ok) throw new Error("Open-Meteo request failed");
             const data = await response.json();
@@ -388,7 +388,11 @@
                         hourNumber: Number(hourIso.slice(11, 13)),
                         temp: Math.round(data.hourly.temperature_2m[hIdx]),
                         pop: data.hourly.precipitation_probability[hIdx] || 0,
-                        iconCode: parseWmo(data.hourly.weather_code[hIdx]).type
+                        humidity: data.hourly.relative_humidity_2m[hIdx],
+                        wind: Number((data.hourly.wind_speed_10m[hIdx] || 0).toFixed(1)),
+                        pressure: Math.round((data.hourly.pressure_msl[hIdx] || 0) * 0.750062),
+                        iconCode: parseWmo(data.hourly.weather_code[hIdx]).type,
+                        desc: parseWmo(data.hourly.weather_code[hIdx]).desc
                     });
                     return acc;
                 }, []);
@@ -431,7 +435,11 @@
                         hourNumber: hIdx,
                         temp: Math.round(h.temp_c),
                         pop: Number(h.chance_of_rain || h.chance_of_snow || 0),
-                        iconCode: parseWeatherApiCode(h.condition.code).type
+                        humidity: h.humidity,
+                        wind: Number((h.wind_kph / 3.6).toFixed(1)),
+                        pressure: Math.round(h.pressure_mb * 0.750062),
+                        iconCode: parseWeatherApiCode(h.condition.code).type,
+                        desc: h.condition.text
                     };
                 });
 
@@ -466,24 +474,31 @@
             } catch(e) { return timeStr; }
         }
 
-        function updateWeatherUI(index, triggerScroll = false) {
+        function updateWeatherUI(index, triggerScroll = false, selectedHourNumber = null) {
             const w = globalForecastData[index];
             if (!w) return;
 
-            const theme = weatherThemes[w.type] || weatherThemes.Clouds;
+            const currentHourSystem = new Date().getHours();
+            const selectedHourData = selectedHourNumber !== null && Array.isArray(w.hourly)
+                ? w.hourly.find(h => h.hourNumber === selectedHourNumber)
+                : null;
+
+            const effectiveType = selectedHourData?.iconCode || w.type;
+            const theme = weatherThemes[effectiveType] || weatherThemes.Clouds;
             document.body.className = `min-h-screen flex flex-col items-center justify-start p-4 md:p-8 transition-all duration-1000 font-sans text-white overflow-x-hidden relative bg-gradient-to-br ${theme.bg}`;
             
             setText('city-name', w.city);
             setText('current-date', `${w.dayName}, ${w.dateStr}`);
-            setText('temp-display', w.temp);
-            setText('weather-desc', w.desc);
-            const currentHour = new Date().getHours();
-            const currentHourData = Array.isArray(w.hourly) ? w.hourly.find(h => h.hourNumber === currentHour) : null;
-            const precipNow = w.isToday && currentHourData ? `${currentHourData.pop}%` : '--%';
+            setText('temp-display', selectedHourData ? selectedHourData.temp : w.temp);
+            setText('weather-desc', selectedHourData?.desc || w.desc);
+            const currentHourData = Array.isArray(w.hourly) ? w.hourly.find(h => h.hourNumber === currentHourSystem) : null;
+            const precipNow = selectedHourData
+                ? `${selectedHourData.pop}%`
+                : (w.isToday && currentHourData ? `${currentHourData.pop}%` : '--%');
             setText('current-precip-value', precipNow);
-            setText('humidity', `${w.humidity} %`);
-            setText('wind-speed', `${w.wind} м/с`);
-            setText('pressure', `${w.pressure} мм рт. ст.`);
+            setText('humidity', `${selectedHourData?.humidity ?? w.humidity} %`);
+            setText('wind-speed', `${selectedHourData?.wind ?? w.wind} м/с`);
+            setText('pressure', `${selectedHourData?.pressure ?? w.pressure} мм рт. ст.`);
             setText('sunrise', w.sunrise);
             setText('sunset', w.sunset);
 
@@ -500,8 +515,6 @@
                 hourlyContainer.classList.remove('hidden');
                 hourlyListContainer.innerHTML = '';
                 const frag = document.createDocumentFragment();
-                
-                const currentHourSystem = new Date().getHours();
 
                 w.hourly.forEach(h => {
                     let hIcon = '<i class="fa-solid fa-cloud text-slate-200"></i>';
@@ -511,13 +524,16 @@
                     
                     const isPassed = w.isToday && h.hourNumber < currentHourSystem;
                     const isCurrent = w.isToday && h.hourNumber === currentHourSystem;
+                    const isSelected = selectedHourData && h.hourNumber === selectedHourData.hourNumber;
 
-                    const item = document.createElement('div');
+                    const item = document.createElement('button');
+                    item.type = 'button';
                     item.id = `hour-card-${h.hourNumber}`;
+                    item.onclick = () => updateWeatherUI(index, false, h.hourNumber);
                     
                     // Прошедшие часы слегка затеняем для визуального разделения
-                    item.className = `flex flex-col items-center border rounded-xl px-4 py-2.5 min-w-[76px] text-center text-xs transition-all duration-300 
-                        ${isCurrent ? 'bg-sky-500/30 border-sky-400 scale-105 shadow-md' : 'bg-white/5 border-white/5'} 
+                    item.className = `flex flex-col items-center border rounded-xl px-4 py-2.5 min-w-[76px] text-center text-xs transition-all duration-300 cursor-pointer
+                        ${isSelected || (isCurrent && !selectedHourData) ? 'bg-sky-500/30 border-sky-400 scale-105 shadow-md' : 'bg-white/5 border-white/5'} 
                         ${isPassed ? 'opacity-40 filter grayscale-[30%]' : ''}`;
                     
                     item.innerHTML = `
@@ -565,7 +581,7 @@
             globalForecastData.forEach((day, index) => {
                 const theme = weatherThemes[day.type] || weatherThemes.Clouds;
                 const row = document.createElement('button');
-                row.onclick = () => updateWeatherUI(index, false); // При ручном клике на карточку дня скролл часов не сбрасываем насильно
+                row.onclick = () => updateWeatherUI(index, false, null); // При ручном клике на карточку дня сбрасываем выбор часа
                 row.className = "forecast-item w-full bg-white/5 border border-white/5 p-4 rounded-2xl flex items-center justify-between gap-4 transition text-left cursor-pointer";
                 
                 row.innerHTML = `
