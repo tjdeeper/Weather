@@ -169,7 +169,7 @@
         <div id="welcome-card" class="weather-card rounded-3xl p-8 text-center border border-white/20 shadow-2xl">
             <div class="text-6xl mb-4 text-sky-400"><i class="fa-solid fa-location-dot animate-bounce"></i></div>
             <h2 class="text-2xl font-bold mb-2">Смарт Погода Мульти-Источник</h2>
-            <p class="text-sm opacity-80 mb-6">Введите название города в панели выше или воспользуйтесь автоматическим определением геолокации.</p>
+            <p class="text-sm opacity-80 mb-6">Используйте поиск по названию города выше или нажмите кнопку ниже для определения погоды по вашей геолокации.</p>
             <button onclick="initWeather()" class="w-full sm:w-auto bg-white text-slate-950 font-extrabold py-3.5 px-8 rounded-2xl transition hover:scale-[1.02] active:scale-[0.98] shadow-xl cursor-pointer">
                 Определить по геолокации
             </button>
@@ -181,7 +181,7 @@
         // Конфигурация ключей
         const WEATHERAPI_KEY = "3eee539d70ae4d4183a162401262705";
         let currentSource = 'weatherapi'; // 'weatherapi' или 'openmeteo'
-        let currentCoords = null;
+        let currentCoords = null; // Будет хранить { lat, lon, name }
         let globalForecastData = []; // Для хранения распарсенного прогноза
 
         // Темы оформления под типы условий
@@ -226,7 +226,7 @@
                         fetchWeatherData(currentCoords.lat, currentCoords.lon, null);
                     },
                     error => {
-                        setStatus("Геопозиция недоступна. Используйте текстовый поиск города.", false);
+                        setStatus("Геопозиция недоступна. Используйте поиск города.", false);
                     }
                 );
             } else {
@@ -234,7 +234,7 @@
             }
         }
 
-        // ИСПРАВЛЕНО: Добавлен обработчик текстового поиска городов
+        // Логика текстового поиска города
         async function handleSearch() {
             const input = document.getElementById('city-input');
             const query = input.value.trim();
@@ -242,11 +242,13 @@
 
             setStatus("Поиск города...", true);
             
+            // Переключаем экраны, если поиск начат со стартовой карточки
             document.getElementById('welcome-card').classList.add('hidden');
             document.getElementById('weather-app').classList.remove('hidden');
             document.getElementById('forecast-container').classList.remove('hidden');
 
             try {
+                // Используем бесплатный Geocoding API от Open-Meteo
                 const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=ru&format=json`;
                 const response = await fetch(geoUrl);
                 if (!response.ok) throw new Error("Geocoding error");
@@ -287,25 +289,22 @@
             }
         }
 
+        // РАБОТА С WEATHERAPI
         async function fetchFromWeatherApi(lat, lon, cityName) {
             const url = `https://api.weatherapi.com/v1/forecast.json?key=${WEATHERAPI_KEY}&q=${lat},${lon}&days=10&lang=ru`;
             const response = await fetch(url);
             if (!response.ok) throw new Error("WeatherAPI error");
             const data = await response.json();
 
+            // Парсим текущую погоду
             const code = data.current.condition.code;
             let type = 'Clouds';
             if (code === 1000) type = 'Clear';
             else if ([1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243, 1246, 1087, 1273, 1276].includes(code)) type = 'Rain';
             else if ([1066, 1114, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258, 1279, 1282].includes(code)) type = 'Snow';
 
-            const finalCityName = cityName || data.location.name;
-            if (currentCoords && !currentCoords.name) {
-                currentCoords.name = data.location.name;
-            }
-
             updateCurrentUI({
-                city: finalCityName,
+                city: data.location.name,
                 date: new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'short' }),
                 temp: Math.round(data.current.temp_c),
                 desc: data.current.condition.text,
@@ -316,6 +315,7 @@
                 type: type
             });
 
+            // Парсим массив дней для прогноза
             globalForecastData = data.forecast.forecastday.map(day => {
                 const fCode = day.day.condition.code;
                 let fType = 'Clouds';
@@ -338,8 +338,8 @@
             renderForecast();
         }
 
+        // РАБОТА С OPEN-METEO
         async function fetchFromOpenMeteo(lat, lon, cityName) {
-            // ИСПРАВЛЕНО: Удален дублирующийся параметр apparent_temperature из строки current
             const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,surface_pressure&daily=weather_code,temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max&wind_speed_unit=ms&pressure_unit=hpa&timezone=auto&forecast_days=10`;
             const response = await fetch(url);
             if (!response.ok) throw new Error("OpenMeteo error");
@@ -354,10 +354,9 @@
             }
 
             const currentInfo = parseWmoCode(data.current.weather_code);
-            const finalCityName = cityName || (currentCoords && currentCoords.name) || "Текущая геопозиция";
 
             updateCurrentUI({
-                city: finalCityName,
+                city: cityName || "Текущая геопозиция",
                 date: new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'short' }),
                 temp: Math.round(data.current.temperature_2m),
                 desc: currentInfo.desc,
@@ -368,22 +367,19 @@
                 type: currentInfo.type
             });
 
-            // ИСПРАВЛЕНО: Безопасное чтение массивов данных daily с проверкой на существование
-            if (data.daily && data.daily.time) {
-                globalForecastData = data.daily.time.map((time, idx) => {
-                    const dayInfo = parseWmoCode(data.daily.weather_code ? data.daily.weather_code[idx] : 3);
-                    return {
-                        dateStr: new Date(time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
-                        dayName: new Date(time).toLocaleDateString('ru-RU', { weekday: 'short' }),
-                        maxTemp: data.daily.temperature_2m_max ? Math.round(data.daily.temperature_2m_max[idx]) : 0,
-                        minTemp: data.daily.temperature_2m_min ? Math.round(data.daily.temperature_2m_min[idx]) : 0,
-                        rainChance: data.daily.precipitation_probability_max ? data.daily.precipitation_probability_max[idx] : 0,
-                        uv: (data.daily.uv_index_max && data.daily.uv_index_max[idx]) ? data.daily.uv_index_max[idx].toFixed(1) : '0',
-                        desc: dayInfo.desc,
-                        type: dayInfo.type
-                    };
-                });
-            }
+            globalForecastData = data.daily.time.map((time, idx) => {
+                const dayInfo = parseWmoCode(data.daily.weather_code[idx]);
+                return {
+                    dateStr: new Date(time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+                    dayName: new Date(time).toLocaleDateString('ru-RU', { weekday: 'short' }),
+                    maxTemp: Math.round(data.daily.temperature_2m_max[idx]),
+                    minTemp: Math.round(data.daily.temperature_2m_min[idx]),
+                    rainChance: data.daily.precipitation_probability_max[idx] || 0,
+                    uv: data.daily.uv_index_max[idx] ? data.daily.uv_index_max[idx].toFixed(1) : 0,
+                    desc: dayInfo.desc,
+                    type: dayInfo.type
+                };
+            });
 
             renderForecast();
         }
