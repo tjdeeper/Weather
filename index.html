@@ -1,10 +1,9 @@
-HTML
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Динамическая Погода Pro</title>
+    <title>Динамическая Погода Pro (Open-Meteo Edition)</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -74,7 +73,7 @@ HTML
             </div>
             
             <form id="search-form" onsubmit="handleSearch(event)" class="flex w-full sm:w-auto max-w-md items-center gap-2">
-                <input type="text" id="search-input" placeholder="Поиск города (например, Москва)..." class="w-full sm:w-64 bg-black/20 border border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-sky-400 placeholder-white/50 text-white">
+                <input type="text" id="search-input" placeholder="Поиск города (на латинице или кириллице)..." class="w-full sm:w-64 bg-black/20 border border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-sky-400 placeholder-white/50 text-white">
                 <button type="submit" class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 active:scale-95 text-sm font-bold rounded-xl transition cursor-pointer">
                     <i class="fa-solid fa-magnifying-glass"></i>
                 </button>
@@ -165,38 +164,39 @@ HTML
 
         <div class="flex justify-center items-center weather-card p-4 rounded-2xl border border-white/10 shadow-lg">
             <div class="flex items-center gap-3">
-                <i class="fa-solid fa-database text-sky-400 text-sm"></i>
+                <i class="fa-solid fa-database text-emerald-400 text-sm"></i>
                 <span class="text-xs font-semibold opacity-80">Погодный движок:</span>
-                <div class="inline-flex rounded-xl bg-black/20 p-1 border border-white/5">
-                    <button id="src-openweather" onclick="switchSource('openweather')" class="px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow">
-                        OpenWeather
-                    </button>
-                    <button id="src-weatherapi" onclick="switchSource('weatherapi')" class="px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white">
-                        WeatherAPI
-                    </button>
-                </div>
+                <span class="px-3 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow">
+                    Open-Meteo (Без ключей / Стабильно)
+                </span>
             </div>
         </div>
 
     </div>
 
     <script>
-        const WEATHERAPI_KEY = "3eee539d70ae4d4183a162401262705";
-        const OPENWEATHER_KEY = "f33b484cf794d08d0148764789aaba32"; 
-        
         const DEFAULT_COORDS = { lat: 44.9521, lon: 34.1024, name: "Симферополь" };
-        
-        let currentSource = 'openweather'; 
         let currentCoords = null;
         let globalForecastData = []; 
         let currentCityName = "Симферополь";
 
+        // Темы оформления по кодам WMO (Open-Meteo)
         const weatherThemes = {
             Clear: { bg: "from-amber-500 via-orange-500 to-sky-600", icon: '<i class="fa-solid fa-sun text-amber-200"></i>', badge: "bg-amber-500/30 text-amber-100", effect: "sun", name: "Ясно" },
             Clouds: { bg: "from-sky-500 via-slate-500 to-slate-700", icon: '<i class="fa-solid fa-cloud text-slate-100"></i>', badge: "bg-slate-500/30 text-slate-100", effect: "none", name: "Облачно" },
             Rain: { bg: "from-slate-700 via-blue-800 to-indigo-950", icon: '<i class="fa-solid fa-cloud-showers-heavy text-blue-300"></i>', badge: "bg-blue-500/30 text-blue-100", effect: "rain", name: "Дождь" },
             Snow: { bg: "from-blue-900 via-indigo-950 to-slate-800", icon: '<i class="fa-solid fa-snowflake text-sky-200"></i>', badge: "bg-sky-500/30 text-sky-100", effect: "snow", name: "Снег" }
         };
+
+        // Интерпретатор кодов погоды WMO
+        function parseWmo(code) {
+            if ([0, 1].includes(code)) return { type: 'Clear', desc: 'Ясно' };
+            if ([2, 3].includes(code)) return { type: 'Clouds', desc: 'Облачно' };
+            if ([45, 48].includes(code)) return { type: 'Clouds', desc: 'Туман' };
+            if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(code)) return { type: 'Rain', desc: 'Дождь / Осадки' };
+            if ([71, 73, 75, 77, 85, 86].includes(code)) return { type: 'Snow', desc: 'Снег / Снегопад' };
+            return { type: 'Clouds', desc: 'Облачно' };
+        }
 
         function initWeatherAutomatically() {
             try {
@@ -211,7 +211,7 @@ HTML
                             document.getElementById('location-status').innerText = "Координаты получены";
                             if(gpsIcon) gpsIcon.classList.remove('animate-spin');
                             
-                            await fetchFilteredCityName(currentCoords.lat, currentCoords.lon);
+                            await fetchCityNameByCoords(currentCoords.lat, currentCoords.lon);
                             fetchWeatherData(currentCoords.lat, currentCoords.lon);
                         },
                         error => {
@@ -238,22 +238,22 @@ HTML
             fetchWeatherData(currentCoords.lat, currentCoords.lon);
         }
 
-        async function fetchFilteredCityName(lat, lon) {
+        // Бесплатный обратный геокодинг (Open-Meteo Geocoding / BigDataCloud альтернатива через гео-поиск)
+        async function fetchCityNameByCoords(lat, lon) {
             try {
-                const res = await fetch(`https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${OPENWEATHER_KEY}`);
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=ru`);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data && data.length > 0) {
-                        currentCityName = data[0].local_names?.ru || data[0].name;
-                        return;
-                    }
+                    currentCityName = data.address.city || data.address.town || data.address.village || "Определенное место";
+                    return;
                 }
             } catch (e) {
-                console.error("Ошибка геокодинга", e);
+                console.error("Ошибка обратного геокодинга", e);
             }
-            currentCityName = "Определенное место"; 
+            currentCityName = "Текущее местоположение"; 
         }
 
+        // Поиск городов через Geocoding API от Open-Meteo (Без ключей)
         async function handleSearch(e) {
             e.preventDefault();
             const query = document.getElementById('search-input').value.trim();
@@ -261,13 +261,14 @@ HTML
 
             document.getElementById('location-status').innerText = "Поиск...";
             try {
-                const res = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(query)}&limit=1&appid=${OPENWEATHER_KEY}`);
+                const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=ru&format=json`);
                 if (!res.ok) throw new Error("Search error");
                 const data = await res.json();
                 
-                if (data && data.length > 0) {
-                    currentCoords = { lat: data[0].lat, lon: data[0].lon };
-                    currentCityName = data[0].local_names?.ru || data[0].name;
+                if (data.results && data.results.length > 0) {
+                    const result = data.results[0];
+                    currentCoords = { lat: result.latitude, lon: result.longitude };
+                    currentCityName = result.name;
                     document.getElementById('location-status').innerText = "Город найден";
                     fetchWeatherData(currentCoords.lat, currentCoords.lon);
                 } else {
@@ -279,52 +280,55 @@ HTML
             }
         }
 
-        function switchSource(source) {
-            if (currentSource === source) return;
-            currentSource = source;
-            
-            const btnOW = document.getElementById('src-openweather');
-            const btnWA = document.getElementById('src-weatherapi');
-            if (source === 'openweather') {
-                btnOW.className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow";
-                btnWA.className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white";
-            } else {
-                btnWA.className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow";
-                btnOW.className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white";
-            }
-
-            if (currentCoords) {
-                fetchWeatherData(currentCoords.lat, currentCoords.lon);
-            }
-        }
-
+        // Запрос погоды из Open-Meteo API
         async function fetchWeatherData(lat, lon) {
             try {
-                if (currentSource === 'openweather') {
-                    try {
-                        await fetchFromOpenWeather(lat, lon);
-                        document.getElementById('location-status').innerText = "Движок: OpenWeather";
-                    } catch (owErr) {
-                        console.warn("Сбой OpenWeather. Переключаемся на WeatherAPI:", owErr);
-                        currentSource = 'weatherapi';
-                        document.getElementById('src-weatherapi').className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow";
-                        document.getElementById('src-openweather').className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white";
-                        await fetchFromWeatherApi(lat, lon);
-                        document.getElementById('location-status').innerText = "Движок: WeatherAPI (Резерв)";
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&wind_speed_unit=ms&timezone=auto`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Open-Meteo API error");
+                const data = await response.json();
+
+                // Парсинг данных в единую структуру globalForecastData
+                globalForecastData = data.daily.time.map((dateStr, idx) => {
+                    const wmoInfo = parseWmo(data.daily.weather_code[idx]);
+                    const dateObj = new Date(dateStr);
+                    
+                    // Почасовая сетка (только для сегодняшнего дня, шагом в 3 часа)
+                    let hourlyList = [];
+                    if (idx === 0) {
+                        for(let i = 0; i < 24; i += 3) {
+                            const hIdx = i; 
+                            const hTime = data.hourly.time[hIdx] ? data.hourly.time[hIdx].slice(11, 16) : '--:--';
+                            hourlyList.push({
+                                time: hTime,
+                                temp: Math.round(data.hourly.temperature_2m[hIdx]),
+                                pop: data.hourly.precipitation_probability[hIdx] || 0,
+                                iconCode: parseWmo(data.hourly.weather_code[hIdx]).type
+                            });
+                        }
                     }
-                } else {
-                    try {
-                        await fetchFromWeatherApi(lat, lon);
-                        document.getElementById('location-status').innerText = "Движок: WeatherAPI";
-                    } catch (waErr) {
-                        console.warn("Сбой WeatherAPI. Переключаемся на OpenWeather:", waErr);
-                        currentSource = 'openweather';
-                        document.getElementById('src-openweather').className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow";
-                        document.getElementById('src-weatherapi').className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white";
-                        await fetchFromOpenWeather(lat, lon);
-                        document.getElementById('location-status').innerText = "Движок: OpenWeather (Резерв)";
-                    }
-                }
+
+                    return {
+                        isCurrent: idx === 0,
+                        city: currentCityName,
+                        dateStr: dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+                        dayName: dateObj.toLocaleDateString('ru-RU', { weekday: 'long' }),
+                        temp: idx === 0 ? Math.round(data.current.temperature_2m) : Math.round((data.daily.temperature_2m_max[idx] + data.daily.temperature_2m_min[idx]) / 2),
+                        maxTemp: Math.round(data.daily.temperature_2m_max[idx]),
+                        minTemp: Math.round(data.daily.temperature_2m_min[idx]),
+                        desc: wmoInfo.desc,
+                        humidity: idx === 0 ? data.current.relative_humidity_2m : 65,
+                        wind: idx === 0 ? Number(data.current.wind_speed_10m.toFixed(1)) : Number(data.daily.wind_speed_10m_max ? data.daily.wind_speed_10m_max[idx] : 4.0),
+                        pressure: idx === 0 ? Math.round(data.current.pressure_msl * 0.750062) : 755, //Перевод в мм рт. ст.
+                        sunrise: data.daily.sunrise[idx] ? data.daily.sunrise[idx].slice(11, 16) : '--:--',
+                        sunset: data.daily.sunset[idx] ? data.daily.sunset[idx].slice(11, 16) : '--:--',
+                        type: wmoInfo.type,
+                        hourly: hourlyList
+                    };
+                }).slice(0, 5); // Ограничиваем прогноз 5 днями
+
+                updateWeatherUI(0);
+                renderForecastList();
                 
                 const appCard = document.getElementById('weather-app');
                 const forecastCard = document.getElementById('forecast-container');
@@ -335,123 +339,11 @@ HTML
                     if(forecastCard) forecastCard.classList.add('opacity-100');
                 }, 50);
 
+                document.getElementById('location-status').innerText = "Данные обновлены";
             } catch (err) {
-                console.error("Оба источника недоступны:", err);
-                document.getElementById('location-status').innerText = "Ошибка: проверьте интернет";
+                console.error("Ошибка построения интерфейса:", err);
+                document.getElementById('location-status').innerText = "Ошибка получения погоды";
             }
-        }
-
-        async function fetchFromOpenWeather(lat, lon) {
-            const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=metric&lang=ru&appid=${OPENWEATHER_KEY}`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error("OpenWeather error");
-            const data = await response.json();
-
-            const sunriseTime = new Date((data.city.sunrise + data.city.timezone) * 1000).toUTCString().slice(17, 22);
-            const sunsetTime = new Date((data.city.sunset + data.city.timezone) * 1000).toUTCString().slice(17, 22);
-
-            const dailyMap = {};
-            const hourlyList = [];
-
-            data.list.forEach((item, index) => {
-                const dateObj = new Date(item.dt * 1000);
-                const dayKey = dateObj.toLocaleDateString('ru-RU');
-                
-                if (index < 8) {
-                    hourlyList.push({
-                        time: dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-                        temp: Math.round(item.main.temp),
-                        pop: Math.round((item.pop || 0) * 100),
-                        iconCode: item.weather[0].main
-                    });
-                }
-
-                if (!dailyMap[dayKey]) {
-                    let type = 'Clouds';
-                    const mainWeather = item.weather[0].main;
-                    if (mainWeather === 'Clear') type = 'Clear';
-                    else if (['Rain', 'Drizzle', 'Thunderstorm'].includes(mainWeather)) type = 'Rain';
-                    else if (mainWeather === 'Snow') type = 'Snow';
-
-                    const cityFinalName = (currentCityName === "Определенное место" && data.city?.name) ? data.city.name : currentCityName;
-
-                    dailyMap[dayKey] = {
-                        isCurrent: Object.keys(dailyMap).length === 0,
-                        city: cityFinalName,
-                        dateStr: dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
-                        dayName: dateObj.toLocaleDateString('ru-RU', { weekday: 'long' }),
-                        temp: Math.round(item.main.temp),
-                        maxTemp: Math.round(item.main.temp_max),
-                        minTemp: Math.round(item.main.temp_min),
-                        desc: item.weather[0].description,
-                        humidity: item.main.humidity,
-                        wind: Number(item.wind.speed.toFixed(1)),
-                        pressure: Math.round(item.main.pressure * 0.750062),
-                        sunrise: sunriseTime,
-                        sunset: sunsetTime,
-                        type: type,
-                        hourly: [] 
-                    };
-                } else {
-                    if(item.main.temp_max > dailyMap[dayKey].maxTemp) dailyMap[dayKey].maxTemp = Math.round(item.main.temp_max);
-                    if(item.main.temp_min < dailyMap[dayKey].minTemp) dailyMap[dayKey].minTemp = Math.round(item.main.temp_min);
-                }
-            });
-
-            globalForecastData = Object.values(dailyMap).slice(0, 5);
-            if(globalForecastData[0]) {
-                globalForecastData[0].hourly = hourlyList;
-            }
-
-            updateWeatherUI(0);
-            renderForecastList();
-        }
-
-        async function fetchFromWeatherApi(lat, lon) {
-            const url = `https://api.weatherapi.com/v1/forecast.json?key=${WEATHERAPI_KEY}&q=${lat},${lon}&days=7&lang=ru`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error("WeatherAPI error");
-            const data = await response.json();
-
-            globalForecastData = data.forecast.forecastday.map((day, idx) => {
-                const code = idx === 0 ? data.current.condition.code : day.day.condition.code;
-                let type = 'Clouds';
-                if (code === 1000) type = 'Clear';
-                else if ([1063, 1150, 1153, 1180, 1183, 1186, 1189, 1192, 1195, 1240, 1243, 1246, 1087, 1273, 1276].includes(code)) type = 'Rain';
-                else if ([1066, 1114, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258, 1279, 1282].includes(code)) type = 'Snow';
-
-                const hours = day.hour.map((h) => {
-                    return {
-                        time: h.time.slice(11),
-                        temp: Math.round(h.temp_c),
-                        pop: h.chance_of_rain || h.chance_of_snow || 0,
-                        iconCode: h.condition.text.includes('ясно') || h.condition.text.includes('Солнечно') ? 'Clear' : 'Clouds'
-                    };
-                }).filter((_, hIdx) => hIdx % 3 === 0);
-
-                const cityFinalName = (currentCityName === "Определенное место" && data.location?.name) ? data.location.name : currentCityName;
-
-                return {
-                    isCurrent: idx === 0,
-                    city: cityFinalName,
-                    dateStr: new Date(day.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
-                    dayName: new Date(day.date).toLocaleDateString('ru-RU', { weekday: 'long' }),
-                    temp: idx === 0 ? Math.round(data.current.temp_c) : Math.round(day.day.avgtemp_c),
-                    maxTemp: Math.round(day.day.maxtemp_c),
-                    minTemp: Math.round(day.day.mintemp_c),
-                    desc: idx === 0 ? data.current.condition.text : day.day.condition.text,
-                    humidity: idx === 0 ? data.current.humidity : day.day.avghumidity,
-                    wind: idx === 0 ? Number((data.current.wind_kph / 3.6).toFixed(1)) : Number((day.day.maxwind_kph / 3.6).toFixed(1)),
-                    pressure: idx === 0 ? Math.round(data.current.pressure_mb * 0.750062) : 753,
-                    sunrise: day.astro.sunrise,
-                    sunset: day.astro.sunset,
-                    type: type,
-                    hourly: idx === 0 ? hours : []
-                };
-            });
-
-            updateWeatherUI(0);
-            renderForecastList();
         }
 
         function updateWeatherUI(index) {
@@ -479,6 +371,7 @@ HTML
             const hourlyContainer = document.getElementById('hourly-container');
             const hourlyListContainer = document.getElementById('hourly-list');
             
+            // Заполнение почасового графика (активно только для текущих суток)
             if (w.hourly && w.hourly.length > 0) {
                 hourlyContainer.classList.remove('hidden');
                 hourlyListContainer.innerHTML = '';
@@ -487,6 +380,7 @@ HTML
                     let hIcon = '<i class="fa-solid fa-cloud text-slate-200"></i>';
                     if (h.iconCode === 'Clear') hIcon = '<i class="fa-solid fa-sun text-amber-300"></i>';
                     if (h.iconCode === 'Rain') hIcon = '<i class="fa-solid fa-cloud-rain text-blue-300"></i>';
+                    if (h.iconCode === 'Snow') hIcon = '<i class="fa-solid fa-snowflake text-sky-300"></i>';
                     
                     const item = document.createElement('div');
                     item.className = "flex flex-col items-center bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 min-w-[75px] text-center text-xs";
@@ -565,7 +459,6 @@ HTML
                     particle.style.left = `${Math.random() * 100}%`;
                     particle.style.top = `${Math.random() * -15}%`;
                     
-                    // Восстановленная и завершенная строка логики длительности анимаций
                     particle.style.animationDuration = effectType === 'rain' 
                         ? `${0.4 + Math.random() * 0.4}s` 
                         : `${3 + Math.random() * 4}s`;
@@ -576,7 +469,6 @@ HTML
             }
         }
 
-        // Автозапуск приложения при первичной загрузке страницы
         window.onload = initWeatherAutomatically;
     </script>
 </body>
