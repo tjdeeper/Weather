@@ -103,6 +103,11 @@
                                 <span id="temp-display">--</span><span class="text-3xl absolute -top-1 -right-5">°</span>
                             </div>
                             <p id="weather-desc" class="text-lg font-medium capitalize mt-1 opacity-90">---</p>
+                            <p class="text-sm font-semibold mt-1 text-cyan-200 flex items-center gap-1.5">
+                                <i class="fa-solid fa-droplet text-cyan-300"></i>
+                                <span>Осадки сейчас:</span>
+                                <span id="current-precip-value">--%</span>
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -194,7 +199,7 @@
         const UI = {};
         const uiKeys = [
             'gps-icon', 'location-status', 'search-input', 'weather-app', 'forecast-container',
-            'city-name', 'current-date', 'temp-display', 'weather-desc', 'humidity', 'wind-speed',
+            'city-name', 'current-date', 'temp-display', 'weather-desc', 'current-precip-value', 'humidity', 'wind-speed',
             'pressure', 'sunrise', 'sunset', 'weather-status-badge', 'weather-icon-container',
             'hourly-container', 'hourly-list', 'forecast-days', 'engine-select',
             'key-input-container', 'weatherapi-key', 'effects-container'
@@ -472,6 +477,10 @@
             setText('current-date', `${w.dayName}, ${w.dateStr}`);
             setText('temp-display', w.temp);
             setText('weather-desc', w.desc);
+            const currentHour = new Date().getHours();
+            const currentHourData = Array.isArray(w.hourly) ? w.hourly.find(h => h.hourNumber === currentHour) : null;
+            const precipNow = w.isToday && currentHourData ? `${currentHourData.pop}%` : '--%';
+            setText('current-precip-value', precipNow);
             setText('humidity', `${w.humidity} %`);
             setText('wind-speed', `${w.wind} м/с`);
             setText('pressure', `${w.pressure} мм рт. ст.`);
