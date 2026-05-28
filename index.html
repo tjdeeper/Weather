@@ -154,18 +154,18 @@ input:focus-visible {
                     </div>
 
                     <div>
-                        <div class="text-7xl font-black tracking-tight">
+                        <div class="text-5xl sm:text-7xl font-black tracking-tight leading-none">
                             <span id="temperature">--</span>°
                         </div>
 
-                        <div id="description" class="text-xl opacity-80 mt-2">
+                        <div id="description" class="text-lg sm:text-xl opacity-80 mt-2 break-words max-w-full">
                             ---
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 sm:grid-cols-2 gap-3 w-full overflow-hidden">
                 <div class="weather-card rounded-2xl p-4">
                     <div class="opacity-60 text-sm">Влажность</div>
                     <div id="humidity" class="text-2xl font-bold mt-2">--%</div>
@@ -190,12 +190,15 @@ input:focus-visible {
 
         <div class="mt-8">
             <h2 class="text-xl font-bold mb-4">Почасовой прогноз</h2>
-            <div id="hourly-list" class="flex gap-3 overflow-x-auto pb-3 hourly-scroll"></div>
+            <div id="hourly-list" class="flex gap-3 overflow-x-auto pb-3 hourly-scroll snap-x snap-mandatory"></div>
         </div>
 
-        <div class="mt-8 weather-card rounded-3xl p-4">
-            <canvas id="temp-chart"></canvas>
+        <div class="mt-8">
+            <h2 class="text-xl font-bold mb-4">Прогноз по дням</h2>
+            <div id="daily-list" class="flex flex-col gap-3"></div>
         </div>
+
+        
 
     </div>
 </div>
@@ -411,7 +414,7 @@ async function fetchWeather(lat, lon) {
     try {
         document.getElementById('error-card').classList.add('hidden');
 
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m&daily=sunrise&timezone=auto`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code&daily=sunrise,weather_code,temperature_2m_max,temperature_2m_min,time&timezone=auto&forecast_days=10`;
 
         const response = await fetchWithTimeout(url);
         const data = await response.json();
@@ -460,35 +463,106 @@ function renderWeather(data) {
     iconContainer.innerHTML = '';
     iconContainer.appendChild(icon);
 
-    renderHourly(data.hourly.temperature_2m);
+    renderHourly(
+        data.hourly.temperature_2m,
+        data.hourly.precipitation_probability || [],
+        data.hourly.weather_code || []
+    );
+
+    renderDaily(data);
 }
 
-function renderHourly(temps) {
+function renderHourly(hourlyTemps, hourlyPrecip = [], hourlyCodes = []) {
     const container = document.getElementById('hourly-list');
     container.innerHTML = '';
 
-    const labels = [];
-    const chartData = [];
+    const currentHour = new Date().getHours();
 
-    temps.slice(0,24).forEach((temp, index) => {
+    hourlyTemps.slice(0,24).forEach((temp, index) => {
         const card = document.createElement('div');
 
-        card.className = 'weather-card rounded-2xl p-4 min-w-[90px] text-center';
+        const weather = parseWeather(hourlyCodes[index] || 0);
+        const probability = hourlyPrecip[index] || 0;
+
+        card.className = `weather-card rounded-2xl p-4 min-w-[96px] text-center snap-start flex-shrink-0 ${index < currentHour ? 'opacity-40' : ''}`;
 
         const hour = String(index).padStart(2,'0') + ':00';
 
-        labels.push(hour);
-        chartData.push(temp);
-
         card.innerHTML = `
             <div class="opacity-60 text-sm">${hour}</div>
-            <div class="text-2xl font-black mt-3">${Math.round(temp)}°</div>
+            <div class="text-2xl mt-3">
+                <i class="fa-solid ${weather.icon}"></i>
+            </div>
+            <div class="text-2xl font-black mt-2">${Math.round(temp)}°</div>
+            <div class="text-xs mt-2 opacity-80 flex items-center justify-center gap-1">
+                <i class="fa-solid fa-droplet"></i>
+                ${probability}%
+            </div>
         `;
 
         container.appendChild(card);
     });
 
-    renderChart(labels, chartData);
+    setTimeout(() => {
+        const targetCard = container.children[currentHour];
+
+        if (targetCard) {
+            container.scrollTo({
+                left: targetCard.offsetLeft - 12,
+                behavior: 'smooth'
+            });
+        }
+    }, 100);
+}
+
+function renderDaily(data) {
+    const container = document.getElementById('daily-list');
+    container.innerHTML = '';
+
+    data.daily.time.forEach((date, index) => {
+        const weather = parseWeather(data.daily.weather_code[index]);
+
+        const row = document.createElement('button');
+
+        row.className = 'weather-card rounded-2xl p-4 flex items-center justify-between text-left active:scale-[0.99] transition';
+
+        row.innerHTML = `
+            <div class="flex items-center gap-4 min-w-0">
+                <div class="text-2xl shrink-0">
+                    <i class="fa-solid ${weather.icon}"></i>
+                </div>
+
+                <div class="min-w-0">
+                    <div class="font-bold capitalize truncate">
+                        ${new Date(date).toLocaleDateString('ru-RU', {
+                            weekday: 'long',
+                            day: 'numeric',
+                            month: 'short'
+                        })}
+                    </div>
+
+                    <div class="text-sm opacity-70 truncate">
+                        ${weather.label}
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-right shrink-0 ml-3">
+                <div class="font-black text-lg">
+                    ${Math.round(data.daily.temperature_2m_max[index])}°
+                </div>
+                <div class="text-sm opacity-60">
+                    ${Math.round(data.daily.temperature_2m_min[index])}°
+                </div>
+            </div>
+        `;
+
+        row.addEventListener('click', () => {
+            alert(`Подробный прогноз на ${date} можно открыть здесь.`);
+        });
+
+        container.appendChild(row);
+    });
 }
 
 function renderChart(labels, data) {
