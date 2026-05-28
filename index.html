@@ -49,18 +49,19 @@
         .weather-card { backdrop-filter: blur(16px); background: rgba(255, 255, 255, 0.12); transition: all 0.5s ease; }
         .forecast-item { transition: all 0.3s ease; }
         .forecast-item:hover { background: rgba(255, 255, 255, 0.2); transform: translateX(5px); }
-        .forecast-item.active { background: rgba(255, 255, 255, 0.25); border-color: rgba(255, 255, 255, 0.4); }
+        .forecast-item.active { background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.08); }
         
         .hourly-scroll::-webkit-scrollbar { height: 6px; }
         .hourly-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 10px; }
         .hourly-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center justify-start p-4 md:p-8 transition-all duration-1000 font-sans text-white bg-gradient-to-br from-slate-800 to-slate-900 overflow-x-hidden relative">
+<body class="min-h-screen flex flex-col items-center justify-start p-4 md:p-8 transition-all duration-1000 font-sans text-white bg-slate-900 overflow-x-hidden relative">
 
-    <div id="effects-container" class="absolute inset-0 pointer-events-none z-0 overflow-hidden"></div>
+    <div id="bg-stack" class="absolute inset-0 pointer-events-none z-0 overflow-hidden"></div>
+    <div id="effects-container" class="absolute inset-0 pointer-events-none z-10 overflow-hidden"></div>
 
-    <div class="w-full max-w-4xl z-10 flex flex-col gap-5">
+    <div class="w-full max-w-4xl z-20 flex flex-col gap-5">
         
         <div class="weather-card p-3 rounded-2xl border border-white/10 shadow-lg flex flex-col sm:flex-row gap-3 justify-between items-center">
             <div class="flex items-center gap-2 w-full sm:w-auto">
@@ -202,7 +203,7 @@
             'city-name', 'current-date', 'temp-display', 'weather-desc', 'current-precip-value', 'humidity', 'wind-speed',
             'pressure', 'sunrise', 'sunset', 'weather-status-badge', 'weather-icon-container',
             'hourly-container', 'hourly-list', 'forecast-days', 'engine-select',
-            'key-input-container', 'weatherapi-key', 'effects-container'
+            'key-input-container', 'weatherapi-key', 'effects-container', 'bg-stack'
         ];
         function cacheUiElements() {
             uiKeys.forEach(id => { UI[id] = document.getElementById(id); });
@@ -213,11 +214,38 @@
         }
 
         const weatherThemes = {
-            Clear: { bg: "from-amber-500 via-orange-500 to-sky-600", icon: '<i class="fa-solid fa-sun text-amber-200"></i>', badge: "bg-amber-500/30 text-amber-100", effect: "sun", name: "Ясно" },
-            Clouds: { bg: "from-sky-500 via-slate-500 to-slate-700", icon: '<i class="fa-solid fa-cloud text-slate-100"></i>', badge: "bg-slate-500/30 text-slate-100", effect: "none", name: "Облачно" },
-            Rain: { bg: "from-slate-700 via-blue-800 to-indigo-950", icon: '<i class="fa-solid fa-cloud-showers-heavy text-blue-300"></i>', badge: "bg-blue-500/30 text-blue-100", effect: "rain", name: "Дождь" },
-            Snow: { bg: "from-blue-900 via-indigo-950 to-slate-800", icon: '<i class="fa-solid fa-snowflake text-sky-200"></i>', badge: "bg-sky-500/30 text-sky-100", effect: "snow", name: "Снег" }
+            Clear: { gradient: "linear-gradient(135deg, #f59e0b 0%, #f97316 45%, #0284c7 100%)", icon: '<i class="fa-solid fa-sun text-amber-200"></i>', badge: "bg-amber-500/30 text-amber-100", effect: "sun", name: "Ясно" },
+            Clouds: { gradient: "linear-gradient(135deg, #0ea5e9 0%, #64748b 50%, #334155 100%)", icon: '<i class="fa-solid fa-cloud text-slate-100"></i>', badge: "bg-slate-500/30 text-slate-100", effect: "none", name: "Облачно" },
+            Rain: { gradient: "linear-gradient(135deg, #334155 0%, #1e40af 45%, #1e1b4b 100%)", icon: '<i class="fa-solid fa-cloud-showers-heavy text-blue-300"></i>', badge: "bg-blue-500/30 text-blue-100", effect: "rain", name: "Дождь" },
+            Snow: { gradient: "linear-gradient(135deg, #1e3a8a 0%, #312e81 50%, #1e293b 100%)", icon: '<i class="fa-solid fa-snowflake text-sky-200"></i>', badge: "bg-sky-500/30 text-sky-100", effect: "snow", name: "Снег" }
         };
+
+        function setAnimatedBackground(gradient, immediate = false) {
+            const bgStack = UI['bg-stack'];
+            if (!bgStack || !gradient) return;
+
+            const layer = document.createElement('div');
+            layer.className = `absolute inset-0 ${immediate ? '' : 'transition-opacity duration-700'} opacity-0`;
+            layer.style.background = gradient;
+            bgStack.appendChild(layer);
+
+            if (immediate) {
+                layer.classList.remove('opacity-0');
+                layer.classList.add('opacity-100');
+            } else {
+                requestAnimationFrame(() => {
+                    layer.classList.remove('opacity-0');
+                    layer.classList.add('opacity-100');
+                });
+            }
+
+            const oldLayers = bgStack.querySelectorAll('div');
+            if (oldLayers.length > 1) {
+                oldLayers.forEach((oldLayer, idx) => {
+                    if (idx < oldLayers.length - 1) oldLayer.remove();
+                });
+            }
+        }
 
         function parseWmo(code) {
             if ([0, 1].includes(code)) return { type: 'Clear', desc: 'Ясно' };
@@ -485,7 +513,7 @@
 
             const effectiveType = selectedHourData?.iconCode || w.type;
             const theme = weatherThemes[effectiveType] || weatherThemes.Clouds;
-            document.body.className = `min-h-screen flex flex-col items-center justify-start p-4 md:p-8 transition-all duration-1000 font-sans text-white overflow-x-hidden relative bg-gradient-to-br ${theme.bg}`;
+            setAnimatedBackground(theme.gradient);
             
             setText('city-name', w.city);
             setText('current-date', `${w.dayName}, ${w.dateStr}`);
@@ -533,7 +561,7 @@
                     
                     // Прошедшие часы слегка затеняем для визуального разделения
                     item.className = `flex flex-col items-center border rounded-xl px-4 py-2.5 min-w-[76px] text-center text-xs transition-all duration-300 cursor-pointer
-                        ${isSelected || (isCurrent && !selectedHourData) ? 'bg-sky-500/30 border-sky-400 scale-105 shadow-md' : 'bg-white/5 border-white/5'} 
+                        ${isSelected || (isCurrent && !selectedHourData) ? 'bg-sky-500/30 border-sky-400 shadow-md' : 'bg-white/5 border-white/5'} 
                         ${isPassed ? 'opacity-40 filter grayscale-[30%]' : ''}`;
                     
                     item.innerHTML = `
@@ -650,6 +678,7 @@
 
         window.onload = () => {
             cacheUiElements();
+            setAnimatedBackground(weatherThemes.Clouds.gradient, true);
             initWeatherAutomatically();
         };
     </script>
