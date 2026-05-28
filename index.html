@@ -1,3 +1,4 @@
+HTML
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -563,21 +564,20 @@
                     particle.className = effectType === 'rain' ? 'raindrop' : 'snowflake';
                     particle.style.left = `${Math.random() * 100}%`;
                     particle.style.top = `${Math.random() * -15}%`;
-                    particle.style.animationDuration = effectType === 'rain' ? `${0.4 + Math.random() * 0.4}s` : `${2.5 + Math.random() * 3.5}s`;
-                    particle.style.animationDelay = `${Math.random() * 2}s`;
                     
-                    if (effectType === 'snow') {
-                        const size = 3 + Math.random() * 4;
-                        particle.style.width = `${size}px`;
-                        particle.style.height = `${size}px`;
-                    }
+                    // Восстановленная и завершенная строка логики длительности анимаций
+                    particle.style.animationDuration = effectType === 'rain' 
+                        ? `${0.4 + Math.random() * 0.4}s` 
+                        : `${3 + Math.random() * 4}s`;
+                        
+                    particle.style.animationDelay = `${Math.random() * 5}s`;
                     container.appendChild(particle);
                 }
             }
         }
 
-        // ПРЯМОЙ НЕМЕДЛЕННЫЙ ЗАПУСК СИСТЕМЫ (Без ожидания событий DOM)
-        initWeatherAutomatically();
+        // Автозапуск приложения при первичной загрузке страницы
+        window.onload = initWeatherAutomatically;
     </script>
 </body>
 </html>
