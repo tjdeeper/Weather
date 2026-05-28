@@ -630,7 +630,8 @@
                     particle.style.left = `${Math.random() * 100}%`;
                     particle.style.top = `${Math.random() * -15}%`;
                     particle.style.animationDuration = effectType === 'rain' ? `${0.4 + Math.random() * 0.4}s` : `${3 + Math.random() * 4}s`;
-                    particle.style.animationDelay = `${Math.random() * 5}s`;
+                    // Negative delay starts particles mid-animation, so drops don't freeze at top on effect start.
+                    particle.style.animationDelay = `-${Math.random() * 5}s`;
                     container.appendChild(particle);
                 }
             }
