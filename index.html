@@ -51,7 +51,6 @@
         .forecast-item:hover { background: rgba(255, 255, 255, 0.2); transform: translateX(5px); }
         .forecast-item.active { background: rgba(255, 255, 255, 0.25); border-color: rgba(255, 255, 255, 0.4); }
         
-        /* Стилизация скроллбара почасового прогноза */
         .hourly-scroll::-webkit-scrollbar { height: 6px; }
         .hourly-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 10px; }
         .hourly-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
@@ -69,7 +68,7 @@
                     <i id="gps-icon" class="fa-solid fa-location-crosshairs text-sky-400"></i>
                 </button>
                 <div class="text-sm font-medium overflow-hidden text-ellipsis whitespace-nowrap">
-                    <span id="location-status">Загрузка...</span>
+                    <span id="location-status">Подготовка системы...</span>
                 </div>
             </div>
             
@@ -152,8 +151,7 @@
                 <h3 class="text-sm font-bold uppercase tracking-wider mb-3 opacity-90 flex items-center gap-2">
                     <i class="fa-regular fa-clock text-sky-400"></i> Прогноз на 24 часа & Вероятность осадков
                 </h3>
-                <div id="hourly-list" class="flex gap-4 overflow-x-auto pb-2 hourly-scroll">
-                    </div>
+                <div id="hourly-list" class="flex gap-4 overflow-x-auto pb-2 hourly-scroll"></div>
             </div>
         </div>
 
@@ -161,9 +159,7 @@
             <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
                 <i class="fa-solid fa-calendar-days text-sky-400"></i> Прогноз погоды
             </h2>
-            
-            <div id="forecast-days" class="flex flex-col gap-2.5">
-                </div>
+            <div id="forecast-days" class="flex flex-col gap-2.5"></div>
         </div>
 
         <div class="flex justify-center items-center weather-card p-4 rounded-2xl border border-white/10 shadow-lg">
@@ -214,16 +210,18 @@
                 navigator.geolocation.getCurrentPosition(
                     async position => {
                         currentCoords = { lat: position.coords.latitude, lon: position.coords.longitude };
-                        document.getElementById('location-status').innerText = "Определено по GPS";
+                        document.getElementById('location-status').innerText = "Координаты получены";
                         if(gpsIcon) gpsIcon.classList.remove('animate-spin');
+                        
+                        // Сначала пробуем получить имя города из быстрого геокодера OpenWeather
                         await fetchFilteredCityName(currentCoords.lat, currentCoords.lon);
                         fetchWeatherData(currentCoords.lat, currentCoords.lon);
                     },
                     error => {
-                        console.warn("GPS недоступен. Симферополь по умолчанию.");
-                        useDefaultLocation("Локация по умолчанию");
+                        console.warn("GPS отклонен. Загрузка дефолтной локации.");
+                        useDefaultLocation("Симферополь (По умолчанию)");
                     },
-                    { timeout: 4000 }
+                    { timeout: 5000 }
                 );
             } else {
                 useDefaultLocation("GPS не поддерживается");
@@ -239,9 +237,10 @@
             fetchWeatherData(currentCoords.lat, currentCoords.lon);
         }
 
+        // Безопасный внутренний геокодер (без использования сторонних сайтов)
         async function fetchFilteredCityName(lat, lon) {
             try {
-                const res = await fetch(`https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=3&appid=${OPENWEATHER_KEY}`);
+                const res = await fetch(`https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${OPENWEATHER_KEY}`);
                 if (res.ok) {
                     const data = await res.json();
                     if (data && data.length > 0) {
@@ -249,14 +248,10 @@
                         return;
                     }
                 }
-                const resFallback = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12&accept-language=ru`);
-                if(resFallback.ok) {
-                    const fallbackData = await resFallback.json();
-                    currentCityName = fallbackData.address.city || fallbackData.address.town || fallbackData.address.county || "Крупный город";
-                }
             } catch (e) {
-                currentCityName = "Определенный город";
+                console.error("Ошибка определения названия города", e);
             }
+            currentCityName = "Определенное место"; 
         }
 
         async function handleSearch(e) {
@@ -264,7 +259,7 @@
             const query = document.getElementById('search-input').value.trim();
             if (!query) return;
 
-            document.getElementById('location-status').innerText = "Поиск города...";
+            document.getElementById('location-status').innerText = "Поиск...";
             try {
                 const res = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(query)}&limit=1&appid=${OPENWEATHER_KEY}`);
                 if (!res.ok) throw new Error("Search error");
@@ -273,7 +268,7 @@
                 if (data && data.length > 0) {
                     currentCoords = { lat: data[0].lat, lon: data[0].lon };
                     currentCityName = data[0].local_names?.ru || data[0].name;
-                    document.getElementById('location-status').innerText = "Выбран город из поиска";
+                    document.getElementById('location-status').innerText = "Город найден";
                     fetchWeatherData(currentCoords.lat, currentCoords.lon);
                 } else {
                     document.getElementById('location-status').innerText = "Город не найден";
@@ -303,87 +298,24 @@
             }
         }
 
-        // ОТКАЗОУСТОЙЧИВАЯ СИСТЕМА ЗАГРУЗКИ (УМНЫЙ ФОЛБЕК)
+        // Каскадная отказоустойчивая загрузка данных
         async function fetchWeatherData(lat, lon) {
             try {
                 if (currentSource === 'openweather') {
                     try {
                         await fetchFromOpenWeather(lat, lon);
+                        document.getElementById('location-status').innerText = "Движок: OpenWeather";
                     } catch (owErr) {
-                        console.warn("Сбой OpenWeather. Авто-переключение на WeatherAPI:", owErr);
+                        console.warn("Сбой OpenWeather. Переключаемся на WeatherAPI:", owErr);
                         currentSource = 'weatherapi';
                         document.getElementById('src-weatherapi').className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow";
                         document.getElementById('src-openweather').className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white";
                         await fetchFromWeatherApi(lat, lon);
+                        document.getElementById('location-status').innerText = "Движок: WeatherAPI (Резерв)";
                     }
                 } else {
                     try {
                         await fetchFromWeatherApi(lat, lon);
+                        document.getElementById('location-status').innerText = "Движок: WeatherAPI";
                     } catch (waErr) {
-                        console.warn("Сбой WeatherAPI. Авто-переключение на OpenWeather:", waErr);
-                        currentSource = 'openweather';
-                        document.getElementById('src-openweather').className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer bg-sky-500 text-white shadow";
-                        document.getElementById('src-weatherapi').className = "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer text-white/60 hover:text-white";
-                        await fetchFromOpenWeather(lat, lon);
-                    }
-                }
-                
-                const appCard = document.getElementById('weather-app');
-                const forecastCard = document.getElementById('forecast-container');
-                if(appCard) appCard.classList.remove('hidden');
-                if(forecastCard) forecastCard.classList.remove('hidden');
-                setTimeout(() => {
-                    if(appCard) appCard.classList.add('opacity-100');
-                    if(forecastCard) forecastCard.classList.add('opacity-100');
-                }, 50);
-
-            } catch (err) {
-                console.error("Оба источника недоступны:", err);
-                document.getElementById('location-status').innerText = "Ошибка сети / Проверьте API ключи";
-            }
-        }
-
-        async function fetchFromOpenWeather(lat, lon) {
-            const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=metric&lang=ru&appid=${OPENWEATHER_KEY}`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error("OpenWeather API Error");
-            const data = await response.json();
-
-            const sunriseTime = new Date((data.city.sunrise + data.city.timezone) * 1000).toUTCString().slice(17, 22);
-            const sunsetTime = new Date((data.city.sunset + data.city.timezone) * 1000).toUTCString().slice(17, 22);
-
-            const dailyMap = {};
-            const hourlyList = [];
-
-            data.list.forEach((item, index) => {
-                const dateObj = new Date(item.dt * 1000);
-                const dayKey = dateObj.toLocaleDateString('ru-RU');
-                
-                if (index < 8) {
-                    hourlyList.push({
-                        time: dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-                        temp: Math.round(item.main.temp),
-                        pop: Math.round((item.pop || 0) * 100),
-                        iconCode: item.weather[0].main
-                    });
-                }
-
-                if (!dailyMap[dayKey]) {
-                    let type = 'Clouds';
-                    const mainWeather = item.weather[0].main;
-                    if (mainWeather === 'Clear') type = 'Clear';
-                    else if (['Rain', 'Drizzle', 'Thunderstorm'].includes(mainWeather)) type = 'Rain';
-                    else if (mainWeather === 'Snow') type = 'Snow';
-
-                    dailyMap[dayKey] = {
-                        isCurrent: Object.keys(dailyMap).length === 0,
-                        city: currentCityName,
-                        dateStr: dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
-                        dayName: dateObj.toLocaleDateString('ru-RU', { weekday: 'long' }),
-                        temp: Math.round(item.main.temp),
-                        maxTemp: Math.round(item.main.temp_max),
-                        minTemp: Math.round(item.main.temp_min),
-                        desc: item.weather[0].description,
-                        humidity: item.main.humidity,
-                        wind: Number(item.wind.speed.toFixed(1)),
-                        pressure: Math.round(item
+                        console.warn("Сбой WeatherAPI. Переключаемся на OpenWeather:", waErr);
