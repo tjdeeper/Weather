@@ -223,27 +223,36 @@
         function setAnimatedBackground(gradient, immediate = false) {
             const bgStack = UI['bg-stack'];
             if (!bgStack || !gradient) return;
+            if (bgStack.dataset.currentGradient === gradient) return;
+            bgStack.dataset.currentGradient = gradient;
 
             const layer = document.createElement('div');
-            layer.className = `absolute inset-0 ${immediate ? '' : 'transition-opacity duration-700'} opacity-0`;
+            layer.className = 'absolute inset-0 opacity-0';
             layer.style.background = gradient;
+            if (!immediate) {
+                layer.style.transition = 'opacity 700ms ease';
+            }
             bgStack.appendChild(layer);
 
             if (immediate) {
                 layer.classList.remove('opacity-0');
                 layer.classList.add('opacity-100');
+                const allLayers = bgStack.querySelectorAll('div');
+                allLayers.forEach((oldLayer, idx) => {
+                    if (idx < allLayers.length - 1) oldLayer.remove();
+                });
             } else {
                 requestAnimationFrame(() => {
                     layer.classList.remove('opacity-0');
                     layer.classList.add('opacity-100');
                 });
-            }
-
-            const oldLayers = bgStack.querySelectorAll('div');
-            if (oldLayers.length > 1) {
-                oldLayers.forEach((oldLayer, idx) => {
-                    if (idx < oldLayers.length - 1) oldLayer.remove();
-                });
+                // Remove previous layers only after fade-in completes to prevent flicker.
+                setTimeout(() => {
+                    const layers = bgStack.querySelectorAll('div');
+                    layers.forEach((oldLayer, idx) => {
+                        if (idx < layers.length - 1) oldLayer.remove();
+                    });
+                }, 750);
             }
         }
 
