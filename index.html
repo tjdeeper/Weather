@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Динамическая Погода Pro v2</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start p-4 md:p-8 transition-all duration-1000 font-sans text-white bg-slate-900 overflow-x-hidden relative">
+
+    <div id="bg-stack" class="absolute inset-0 pointer-events-none z-0 overflow-hidden"></div>
+    <div id="effects-container" class="absolute inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+    <div class="w-full max-w-4xl z-20 flex flex-col gap-5">
+        
+        <div class="weather-card p-3 rounded-2xl border border-white/10 shadow-lg flex flex-col sm:flex-row gap-3 justify-between items-center">
+            <div class="flex items-center gap-2 w-full sm:w-auto">
+                <button id="gps-button" class="p-2 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl transition cursor-pointer" title="Определить по GPS">
+                    <i id="gps-icon" class="fa-solid fa-location-crosshairs text-sky-400"></i>
+                </button>
+                <div class="text-sm font-medium overflow-hidden text-ellipsis whitespace-nowrap">
+                    <span id="location-status">Подготовка системы...</span>
+                </div>
+            </div>
+            
+            <form id="search-form" class="flex w-full sm:w-auto max-w-md items-center gap-2">
+                <input type="text" id="search-input" placeholder="Поиск города..." class="w-full sm:w-64 bg-black/20 border border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-sky-400 placeholder-white/50 text-white">
+                <button type="submit" class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 active:scale-95 text-sm font-bold rounded-xl transition cursor-pointer">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </button>
+            </form>
+        </div>
+
+        <div id="weather-app" class="weather-card rounded-3xl p-6 md:p-8 shadow-2xl border border-white/20 opacity-0 transition-all duration-700 hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                
+                <div>
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <h1 id="city-name" class="text-3xl font-extrabold tracking-tight drop-shadow-sm">---</h1>
+                            <p id="current-date" class="text-sm opacity-80 mt-1">---</p>
+                        </div>
+                        <span id="weather-status-badge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-white/20">
+                            ---
+                        </span>
+                    </div>
+
+                    <div class="flex items-center gap-6 my-4">
+                        <div id="weather-icon-container" class="text-7xl md:text-8xl animate-float filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.25)] relative">
+                            <i class="fa-solid fa-cloud-sun"></i>
+                        </div>
+                        <div>
+                            <div class="text-6xl md:text-7xl font-black tracking-tighter relative inline-block">
+                                <span id="temp-display">--</span><span class="text-3xl absolute -top-1 -right-5">°</span>
+                            </div>
+                            <p id="weather-desc" class="text-lg font-medium capitalize mt-1 opacity-90">---</p>
+                            <p class="text-sm font-semibold mt-1 text-cyan-200 flex items-center gap-1.5">
+                                <i class="fa-solid fa-droplet text-cyan-300"></i>
+                                <span>Осадки сейчас:</span>
+                                <span id="current-precip-value">--%</span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-white/5 rounded-2xl p-3 flex items-center space-x-3 border border-white/5">
+                        <div class="text-xl opacity-80 w-8 text-center text-amber-300"><i class="fa-solid fa-sun"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Восход</p>
+                            <p id="sunrise" class="text-sm font-semibold">--:--</p>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 rounded-2xl p-3 flex items-center space-x-3 border border-white/5">
+                        <div class="text-xl opacity-80 w-8 text-center text-orange-400"><i class="fa-solid fa-moon"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Закат</p>
+                            <p id="sunset" class="text-sm font-semibold">--:--</p>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 rounded-2xl p-3 flex items-center space-x-3 border border-white/5">
+                        <div class="text-xl opacity-80 w-8 text-center text-blue-300"><i class="fa-solid fa-droplet"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Влажность</p>
+                            <p id="humidity" class="text-sm font-semibold">-- %</p>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 rounded-2xl p-3 flex items-center space-x-3 border border-white/5">
+                        <div class="text-xl opacity-80 w-8 text-center text-teal-300"><i class="fa-solid fa-wind"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Ветер</p>
+                            <p id="wind-speed" class="text-sm font-semibold">-- м/с</p>
+                        </div>
+                    </div>
+                    <div class="bg-white/5 rounded-2xl p-3 flex items-center space-x-3 border border-white/5 col-span-2">
+                        <div class="text-xl opacity-80 w-8 text-center text-rose-300"><i class="fa-solid fa-gauge-high"></i></div>
+                        <div>
+                            <p class="text-xs opacity-60 font-medium">Атмосферное давление</p>
+                            <p id="pressure" class="text-sm font-semibold">-- мм рт. ст.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div id="hourly-container" class="mt-6 pt-5 border-t border-white/10 hidden">
+                <h3 class="text-sm font-bold uppercase tracking-wider mb-3 opacity-90 flex items-center gap-2">
+                    <i class="fa-regular fa-clock text-sky-400"></i> Почасовой прогноз на выбранные сутки
+                </h3>
+                <div id="hourly-list" class="flex gap-3 overflow-x-auto pb-3 hourly-scroll scroll-smooth"></div>
+            </div>
+        </div>
+
+        <div id="forecast-container" class="weather-card rounded-3xl p-6 border border-white/10 opacity-0 transition-all duration-700 hidden">
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-calendar-days text-sky-400"></i> Прогноз на 10 дней вперед
+            </h2>
+            <div id="forecast-days" class="flex flex-col gap-2.5 max-h-[450px] overflow-y-auto pr-1 hourly-scroll"></div>
+        </div>
+
+        <div class="weather-card p-4 rounded-2xl border border-white/10 shadow-lg">
+            <div class="flex flex-col sm:flex-row gap-4 items-center justify-between w-full">
+                <div class="flex items-center gap-3 w-full sm:w-auto">
+                    <i class="fa-solid fa-sliders text-sky-400 text-sm"></i>
+                    <span class="text-xs font-semibold opacity-80 whitespace-nowrap">Провайдер данных:</span>
+                    <select id="engine-select" class="bg-black/30 border border-white/15 text-xs rounded-xl px-2.5 py-1.5 text-white focus:outline-none focus:border-sky-400 cursor-pointer">
+                        <option value="openmeteo" class="bg-slate-800">Open-Meteo (Без ключа)</option>
+                        <option value="weatherapi" class="bg-slate-800">WeatherAPI (Нужен ключ)</option>
+                    </select>
+                </div>
+                
+                <div id="key-input-container" class="w-full sm:w-auto hidden flex-1 sm:flex-none max-w-xs">
+                    <input type="password" id="weatherapi-key" placeholder="Вставьте ваш WeatherAPI Ключ" class="w-full bg-black/30 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400">
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="./app.js" defer></script>
+</body>
+</html>
