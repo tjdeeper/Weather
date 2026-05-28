@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Weather Pro X</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<style>
+:root {
+    --bg-start: #0f172a;
+    --bg-middle: #1e293b;
+    --bg-end: #334155;
+    --card-bg: rgba(255,255,255,0.12);
+    --border: rgba(255,255,255,0.12);
+}
+
+body {
+    background: linear-gradient(135deg,var(--bg-start),var(--bg-middle),var(--bg-end));
+    min-height: 100vh;
+    overflow-x: hidden;
+    transition: background 0.6s ease;
+}
+
+.weather-card {
+    backdrop-filter: blur(18px);
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 35px rgba(0,0,0,0.25);
+}
+
+button:focus-visible,
+input:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+}
+
+#weather-canvas {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.hourly-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+
+.hourly-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 999px;
+}
+
+.skeleton {
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: .4; }
+    50% { opacity: 1; }
+    100% { opacity: .4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+</style>
+</head>
+<body class="text-white font-sans p-4 md:p-8 relative">
+
+<canvas id="weather-canvas"></canvas>
+
+<div id="loading-overlay" class="fixed inset-0 hidden items-center justify-center bg-black/30 backdrop-blur-sm z-50">
+    <div class="weather-card p-6 rounded-3xl flex flex-col items-center gap-4">
+        <div class="w-12 h-12 rounded-full border-4 border-white/20 border-t-sky-400 animate-spin"></div>
+        <span>Загрузка погоды...</span>
+    </div>
+</div>
+
+<div class="max-w-5xl mx-auto relative z-10 flex flex-col gap-5">
+
+    <div class="weather-card rounded-3xl p-4 sticky top-2 z-20">
+        <div class="flex flex-col md:flex-row gap-3 justify-between items-center">
+
+            <div class="flex items-center gap-3 w-full md:w-auto">
+                <button
+                    id="gps-btn"
+                    aria-label="Определить местоположение"
+                    class="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-95 transition">
+                    <i class="fa-solid fa-location-crosshairs text-sky-300"></i>
+                </button>
+
+                <div>
+                    <div class="text-sm opacity-70">Статус</div>
+                    <div id="location-status" class="font-semibold">Ожидание...</div>
+                </div>
+            </div>
+
+            <div class="flex gap-2 w-full md:w-auto">
+                <input
+                    id="search-input"
+                    type="text"
+                    placeholder="Поиск города"
+                    class="flex-1 md:w-72 bg-black/20 border border-white/10 rounded-2xl px-4 py-3">
+
+                <button
+                    id="search-btn"
+                    class="px-5 py-3 rounded-2xl bg-sky-500 hover:bg-sky-600 active:scale-95 transition">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="error-card" class="hidden weather-card rounded-3xl p-8 text-center">
+        <i class="fa-solid fa-triangle-exclamation text-5xl text-red-300"></i>
+        <h2 class="text-2xl font-bold mt-4">Ошибка загрузки</h2>
+        <p class="opacity-70 mt-2">Не удалось получить данные о погоде</p>
+
+        <button id="retry-btn" class="mt-5 px-5 py-3 rounded-2xl bg-red-500 hover:bg-red-600">
+            Повторить
+        </button>
+    </div>
+
+    <div id="weather-card" class="weather-card rounded-[32px] p-6 hidden">
+
+        <div class="grid md:grid-cols-2 gap-6 items-center">
+
+            <div>
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h1 id="city-name" class="text-4xl font-black">---</h1>
+                        <p id="current-date" class="opacity-70 mt-2">---</p>
+                    </div>
+
+                    <div id="weather-badge" class="px-4 py-2 rounded-full bg-white/10 text-sm font-bold">
+                        ---
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-6 mt-8">
+                    <div id="weather-icon" class="text-8xl">
+                        <i class="fa-solid fa-cloud"></i>
+                    </div>
+
+                    <div>
+                        <div class="text-7xl font-black tracking-tight">
+                            <span id="temperature">--</span>°
+                        </div>
+
+                        <div id="description" class="text-xl opacity-80 mt-2">
+                            ---
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="weather-card rounded-2xl p-4">
+                    <div class="opacity-60 text-sm">Влажность</div>
+                    <div id="humidity" class="text-2xl font-bold mt-2">--%</div>
+                </div>
+
+                <div class="weather-card rounded-2xl p-4">
+                    <div class="opacity-60 text-sm">Ветер</div>
+                    <div id="wind" class="text-2xl font-bold mt-2">--</div>
+                </div>
+
+                <div class="weather-card rounded-2xl p-4">
+                    <div class="opacity-60 text-sm">Давление</div>
+                    <div id="pressure" class="text-2xl font-bold mt-2">--</div>
+                </div>
+
+                <div class="weather-card rounded-2xl p-4">
+                    <div class="opacity-60 text-sm">Восход</div>
+                    <div id="sunrise" class="text-2xl font-bold mt-2">--:--</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8">
+            <h2 class="text-xl font-bold mb-4">Почасовой прогноз</h2>
+            <div id="hourly-list" class="flex gap-3 overflow-x-auto pb-3 hourly-scroll"></div>
+        </div>
+
+        <div class="mt-8 weather-card rounded-3xl p-4">
+            <canvas id="temp-chart"></canvas>
+        </div>
+
+    </div>
+</div>
+
+<script>
+const CACHE_KEY = 'weather_cache_pro';
+const CACHE_LIFETIME = 15 * 60 * 1000;
+
+const weatherThemes = {
+    Clear: {
+        start: '#f59e0b',
+        middle: '#ea580c',
+        end: '#0ea5e9'
+    },
+    Clouds: {
+        start: '#64748b',
+        middle: '#475569',
+        end: '#1e293b'
+    },
+    Rain: {
+        start: '#1e293b',
+        middle: '#1d4ed8',
+        end: '#172554'
+    },
+    Snow: {
+        start: '#0f172a',
+        middle: '#334155',
+        end: '#475569'
+    }
+};
+
+let currentCoords = null;
+let currentChart = null;
+let currentEffect = 'none';
+
+const canvas = document.getElementById('weather-canvas');
+const ctx = canvas.getContext('2d');
+let particles = [];
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function createParticles(type) {
+    particles = [];
+
+    const count = type === 'Rain' ? 120 : type === 'Snow' ? 60 : 0;
+
+    for (let i = 0; i < count; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            speed: type === 'Rain' ? 12 : 2,
+            size: type === 'Rain' ? 1 : 3
+        });
+    }
+}
+
+function animateWeather() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if (currentEffect === 'Rain') {
+        ctx.strokeStyle = 'rgba(125,211,252,.5)';
+
+        particles.forEach(p => {
+            ctx.beginPath();
+            ctx.moveTo(p.x,p.y);
+            ctx.lineTo(p.x + 2,p.y + 14);
+            ctx.stroke();
+
+            p.y += p.speed;
+            if (p.y > canvas.height) p.y = -20;
+        });
+    }
+
+    if (currentEffect === 'Snow') {
+        ctx.fillStyle = 'rgba(255,255,255,.7)';
+
+        particles.forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
+            ctx.fill();
+
+            p.y += p.speed;
+            if (p.y > canvas.height) p.y = -10;
+        });
+    }
+
+    requestAnimationFrame(animateWeather);
+}
+
+animateWeather();
+
+function debounce(fn, delay = 400) {
+    let timer;
+
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+    };
+}
+
+async function fetchWithTimeout(url, timeout = 8000) {
+    const controller = new AbortController();
+
+    const timeoutId = setTimeout(() => {
+        controller.abort();
+    }, timeout);
+
+    try {
+        const response = await fetch(url, {
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        return response;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+    }
+}
+
+function setLoading(state) {
+    document
+        .getElementById('loading-overlay')
+        .classList.toggle('hidden', !state);
+
+    document
+        .getElementById('loading-overlay')
+        .classList.toggle('flex', state);
+}
+
+function saveCache(data) {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+        timestamp: Date.now(),
+        data
+    }));
+}
+
+function loadCache() {
+    const raw = localStorage.getItem(CACHE_KEY);
+
+    if (!raw) return null;
+
+    try {
+        const parsed = JSON.parse(raw);
+
+        if (Date.now() - parsed.timestamp > CACHE_LIFETIME) {
+            return null;
+        }
+
+        return parsed.data;
+    } catch {
+        return null;
+    }
+}
+
+function applyTheme(type) {
+    const theme = weatherThemes[type] || weatherThemes.Clouds;
+
+    document.documentElement.style.setProperty('--bg-start', theme.start);
+    document.documentElement.style.setProperty('--bg-middle', theme.middle);
+    document.documentElement.style.setProperty('--bg-end', theme.end);
+
+    currentEffect = type;
+    createParticles(type);
+}
+
+function parseWeather(code) {
+    if ([0,1].includes(code)) {
+        return {
+            type: 'Clear',
+            icon: 'fa-sun',
+            label: 'Ясно'
+        };
+    }
+
+    if ([61,63,65,80,81,82].includes(code)) {
+        return {
+            type: 'Rain',
+            icon: 'fa-cloud-rain',
+            label: 'Дождь'
+        };
+    }
+
+    if ([71,73,75].includes(code)) {
+        return {
+            type: 'Snow',
+            icon: 'fa-snowflake',
+            label: 'Снег'
+        };
+    }
+
+    return {
+        type: 'Clouds',
+        icon: 'fa-cloud',
+        label: 'Облачно'
+    };
+}
+
+async function fetchWeather(lat, lon) {
+    setLoading(true);
+
+    try {
+        document.getElementById('error-card').classList.add('hidden');
+
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,pressure_msl,wind_speed_10m&hourly=temperature_2m&daily=sunrise&timezone=auto`;
+
+        const response = await fetchWithTimeout(url);
+        const data = await response.json();
+
+        saveCache(data);
+        renderWeather(data);
+
+    } catch (err) {
+        console.error(err);
+
+        const cache = loadCache();
+
+        if (cache) {
+            renderWeather(cache);
+            document.getElementById('location-status').innerText = 'Показан кеш';
+        } else {
+            document.getElementById('error-card').classList.remove('hidden');
+        }
+    } finally {
+        setLoading(false);
+    }
+}
+
+function renderWeather(data) {
+    const current = data.current;
+    const weather = parseWeather(current.weather_code);
+
+    applyTheme(weather.type);
+
+    document.getElementById('weather-card').classList.remove('hidden');
+
+    document.getElementById('city-name').innerText = 'Текущее местоположение';
+    document.getElementById('current-date').innerText = new Date().toLocaleString('ru-RU');
+    document.getElementById('temperature').innerText = Math.round(current.temperature_2m);
+    document.getElementById('description').innerText = weather.label;
+    document.getElementById('humidity').innerText = current.relative_humidity_2m + '%';
+    document.getElementById('wind').innerText = current.wind_speed_10m + ' м/с';
+    document.getElementById('pressure').innerText = Math.round(current.pressure_msl * 0.750062) + ' мм';
+    document.getElementById('sunrise').innerText = data.daily.sunrise[0].slice(11,16);
+    document.getElementById('weather-badge').innerText = weather.label;
+
+    const icon = document.createElement('i');
+    icon.className = `fa-solid ${weather.icon}`;
+
+    const iconContainer = document.getElementById('weather-icon');
+    iconContainer.innerHTML = '';
+    iconContainer.appendChild(icon);
+
+    renderHourly(data.hourly.temperature_2m);
+}
+
+function renderHourly(temps) {
+    const container = document.getElementById('hourly-list');
+    container.innerHTML = '';
+
+    const labels = [];
+    const chartData = [];
+
+    temps.slice(0,24).forEach((temp, index) => {
+        const card = document.createElement('div');
+
+        card.className = 'weather-card rounded-2xl p-4 min-w-[90px] text-center';
+
+        const hour = String(index).padStart(2,'0') + ':00';
+
+        labels.push(hour);
+        chartData.push(temp);
+
+        card.innerHTML = `
+            <div class="opacity-60 text-sm">${hour}</div>
+            <div class="text-2xl font-black mt-3">${Math.round(temp)}°</div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    renderChart(labels, chartData);
+}
+
+function renderChart(labels, data) {
+    const chartCanvas = document.getElementById('temp-chart');
+
+    if (currentChart) {
+        currentChart.destroy();
+    }
+
+    currentChart = new Chart(chartCanvas, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Температура',
+                data,
+                tension: 0.4,
+                borderWidth: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: 'white'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: 'white'
+                    }
+                },
+                y: {
+                    ticks: {
+                        color: 'white'
+                    }
+                }
+            }
+        }
+    });
+}
+
+async function detectLocation() {
+    setLoading(true);
+
+    document.getElementById('location-status').innerText = 'Поиск геолокации...';
+
+    navigator.geolocation.getCurrentPosition(async position => {
+
+        currentCoords = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+        };
+
+        document.getElementById('location-status').innerText = 'Геолокация получена';
+
+        await fetchWeather(currentCoords.lat,currentCoords.lon);
+
+    }, async () => {
+
+        currentCoords = {
+            lat: 52.2297,
+            lon: 21.0122
+        };
+
+        document.getElementById('location-status').innerText = 'Используется Варшава';
+
+        await fetchWeather(currentCoords.lat,currentCoords.lon);
+
+    }, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000
+    });
+}
+
+const debouncedSearch = debounce(async () => {
+    const query = document.getElementById('search-input').value.trim();
+
+    if (!query) return;
+
+    try {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=ru&format=json`;
+
+        const response = await fetchWithTimeout(url);
+        const data = await response.json();
+
+        if (data.results?.length) {
+            const result = data.results[0];
+
+            currentCoords = {
+                lat: result.latitude,
+                lon: result.longitude
+            };
+
+            document.getElementById('city-name').innerText = result.name;
+
+            fetchWeather(result.latitude,result.longitude);
+        }
+
+    } catch (err) {
+        console.error(err);
+    }
+}, 500);
+
+setInterval(() => {
+    if (currentCoords) {
+        fetchWeather(currentCoords.lat,currentCoords.lon);
+    }
+}, 10 * 60 * 1000);
+
+if ('serviceWorker' in navigator) {
+    const swCode = `
+        const CACHE = 'weather-pro-cache-v1';
+
+        self.addEventListener('install', event => {
+            event.waitUntil(
+                caches.open(CACHE)
+                    .then(cache => cache.addAll(['./']))
+            );
+        });
+
+        self.addEventListener('fetch', event => {
+            event.respondWith(
+                caches.match(event.request)
+                    .then(response => response || fetch(event.request))
+            );
+        });
+    `;
+
+    const blob = new Blob([swCode], { type: 'text/javascript' });
+    const swUrl = URL.createObjectURL(blob);
+
+    navigator.serviceWorker.register(swUrl);
+}
+
+document.getElementById('gps-btn').addEventListener('click', detectLocation);
+document.getElementById('search-btn').addEventListener('click', debouncedSearch);
+document.getElementById('retry-btn').addEventListener('click', detectLocation);
+
+document.getElementById('search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+        debouncedSearch();
+    }
+});
+
+window.onload = detectLocation;
+</script>
+
+</body>
+</html>
